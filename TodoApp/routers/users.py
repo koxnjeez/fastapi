@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
 from pydantic import BaseModel, Field
-from models import Users
+from ..models import Users
 from passlib.context import CryptContext
-from database import SessionLocal
+from ..database import SessionLocal
 from .auth import get_current_user
 
 router = APIRouter(
@@ -18,7 +18,7 @@ def get_db():
   try:
     yield db
   finally:
-    db.close
+    db.close()
 
 db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
@@ -27,7 +27,7 @@ bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
 class PasswordVerify(BaseModel):
   actual_password: str
-  new_password: str = Field(min_length=6)
+  new_password: str = Field(min_length=6, max_length=45)
 
 @router.get('/profile', status_code=status.HTTP_200_OK)
 async def get_user(user: user_dependency, db: db_dependency):
@@ -49,5 +49,16 @@ async def change_password(user: user_dependency,
     raise HTTPException(status_code=401, detail='Password change error.')
 
   user_model.hashed_password = bcrypt_context.hash(password_verify.new_password)
+  db.add(user_model)
+  db.commit()
+
+@router.put('/profile/{phone_number}', status_code=status.HTTP_204_NO_CONTENT)
+async def change_phone_number(db: db_dependency, user: user_dependency, phone_number: str):
+  if user is None:
+    raise HTTPException(status_code=401, detail='Authentication failed')
+
+  user_model = db.query(Users).filter(Users.id == user.get('id')).first()
+
+  user_model.phone_number = phone_number
   db.add(user_model)
   db.commit()

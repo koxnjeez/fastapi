@@ -1,13 +1,14 @@
 from typing import Annotated
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, timezone
-from models import Users
+from ..models import Users
 from passlib.context import CryptContext
-from database import SessionLocal
+from ..database import SessionLocal
 from jose import JWTError, jwt
+from fastapi.templating import Jinja2Templates
 
 # в адресной строке все будет начинаться на /auth
 router = APIRouter(
@@ -15,7 +16,7 @@ router = APIRouter(
   tags=['auth']
 )
 
-# рандомный ключ - команда в терминале (openssl rand -hex 32)
+# рандомный ключ - команда в терминале (python -c "import secrets; print(secrets.token_hex(32))")
 SECRET_KEY = '124acb5d76c147e78cc075e4214e784c4150352b25cf35bd2f20c3635a1be66b'
 ALGORITHM = 'HS256'
 
@@ -24,7 +25,7 @@ def get_db():
   try:
     yield db
   finally:
-    db.close
+    db.close()
 
 db_dependency = Annotated[Session, Depends(get_db)]
 
@@ -41,6 +42,7 @@ class CreateUserRequest(BaseModel):
   last_name: str = Field(min_length=1, max_length=45)
   password: str = Field(min_length=6, max_length=45)
   role: str | None = Field(default=None, min_length=1, max_length=45)
+  phone_number: str = Field(min_length=1, max_length=45)
 
   model_config = {
     "json_schema_extra": {
@@ -49,7 +51,8 @@ class CreateUserRequest(BaseModel):
         "username": "string",
         "first_name": "string",
         "last_name": "string",
-        "password": "string"
+        "password": "string",
+        "phone_number": "string"
       }
     }
   }
@@ -57,6 +60,16 @@ class CreateUserRequest(BaseModel):
 class Token(BaseModel):
   access_token: str
   token_type: str
+
+templates = Jinja2Templates(directory='TodoApp/templates')
+
+@router.get('/login-page')
+def render_login_page(request: Request):
+  return templates.TemplateResponse('login.html', {'request': request})
+
+@router.get('/register-page')
+def render_register_page(request: Request):
+  return templates.TemplateResponse('register.html', {'request': request})
 
 def authenticate_user(username: str, password: str, db):
   user = db.query(Users).filter(Users.username == username).first()
@@ -96,7 +109,8 @@ async def create_user(db: db_dependency, create_user_request: CreateUserRequest)
     last_name=create_user_request.last_name,
     hashed_password=bcrypt_context.hash(create_user_request.password),
     role='member' if create_user_request.role is None else create_user_request.role,
-    is_active=True
+    is_active=True,
+    phone_number=create_user_request.phone_number
   )
 
   db.add(create_user_model)
